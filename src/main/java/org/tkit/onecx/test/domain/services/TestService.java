@@ -15,11 +15,10 @@ import org.eclipse.microprofile.openapi.models.PathItem;
 import org.eclipse.microprofile.openapi.models.parameters.Parameter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.tkit.onecx.test.domain.models.ProxyConfiguration;
-import org.tkit.onecx.test.domain.models.ServiceException;
-import org.tkit.onecx.test.domain.models.TestExecution;
-import org.tkit.onecx.test.domain.models.TestRequest;
-import org.tkit.onecx.test.domain.models.TestResponse;
+import org.tkit.onecx.test.domain.models.*;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.client.WebClientOptions;
@@ -48,6 +47,9 @@ public class TestService {
 
     @Inject
     Vertx vertx;
+
+    @Inject
+    ObjectMapper objectMapper;
 
     public TestResponse execute(TestRequest request) throws SecurityException {
 
@@ -111,7 +113,9 @@ public class TestService {
         var failed = result.getExecutions().stream().anyMatch(x -> x.getStatus() != TestExecution.Status.OK);
         result.setStatus(failed ? TestResponse.Status.FAILED : TestResponse.Status.OK);
 
-        log.info("Test quarkus result {}", result);
+        String jsonResult = toJson(result);
+
+        log.info("Security test result {}", jsonResult);
 
         return result;
     }
@@ -207,8 +211,11 @@ public class TestService {
             var code = response.statusCode();
             var status = code == Response.Status.UNAUTHORIZED.getStatusCode() ? TestExecution.Status.OK
                     : TestExecution.Status.FAILED;
-            log.error("Test {} {} {} {}", method, uri, code, status);
-
+            if (status == TestExecution.Status.FAILED) {
+                log.error("Security test failed  {} {} {}", method, uri, code);
+            } else {
+                log.info("Security test passed  {} {} {}", method, uri, code);
+            }
             result.getExecutions().add(createExecution(path, proxyPath, status, uri, code));
         } catch (Exception ex) {
             result.getExecutions().add(createExecutionError(path, proxyPath, uri, ex.getMessage()));
@@ -278,6 +285,15 @@ public class TestService {
     /**
      * Remove common path prefix from openapi path to avoid duplicate url path
      */
+    String toJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException ex) {
+            log.warn("Failed to serialize object to JSON: {}", ex.getMessage());
+            return String.valueOf(value);
+        }
+    }
+
     private String removePathPrefix(String proxyPassFull, String openApiPath) {
         return openApiPath.substring(findOverlapLength(proxyPassFull, openApiPath));
     }

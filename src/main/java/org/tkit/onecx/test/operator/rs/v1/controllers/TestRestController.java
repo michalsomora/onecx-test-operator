@@ -8,7 +8,9 @@ import jakarta.ws.rs.core.Response;
 
 import org.jboss.resteasy.reactive.RestResponse;
 import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
+import org.tkit.onecx.test.domain.metrics.SecurityTestMetrics;
 import org.tkit.onecx.test.domain.models.ServiceException;
+import org.tkit.onecx.test.domain.models.TestResponse;
 import org.tkit.onecx.test.domain.services.*;
 import org.tkit.onecx.test.operator.rs.v1.mappers.ExceptionMapper;
 import org.tkit.onecx.test.operator.rs.v1.mappers.TestMapper;
@@ -29,11 +31,20 @@ public class TestRestController implements TestApiService {
     @Inject
     TestMapper testMapper;
 
+    @Inject
+    SecurityTestMetrics securityTestMetrics;
+
     @Override
     public Response executeSecurityTest(SecurityTestRequestDTO dto) {
         var req = testMapper.map(dto);
-        var response = testService.execute(req);
-        return Response.ok(testMapper.create(response)).build();
+        try {
+            TestResponse response = testService.execute(req);
+            securityTestMetrics.incrementRequest(req.getService(), response.getStatus().name());
+            return Response.ok(testMapper.create(response)).build();
+        } catch (ServiceException ex) {
+            securityTestMetrics.incrementRequest(req.getService(), "ERROR");
+            throw ex;
+        }
     }
 
     @ServerExceptionMapper
